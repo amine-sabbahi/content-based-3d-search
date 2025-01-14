@@ -1,4 +1,3 @@
-# app.py
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
@@ -11,8 +10,9 @@ from PIL import Image as PILImage
 import traceback
 import json
 import pandas as pd
-import numpy as np
-
+from werkzeug.utils import secure_filename
+import shutil
+import csv  # Added for CSV handling
 
 app = Flask(__name__)
 CORS(app)
@@ -23,137 +23,33 @@ db = client["image_db"]
 users_collection = db["users"]
 images_collection = db["images"]
 
-# Configure upload folder
-UPLOAD_FOLDER = 'Uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp'}
+# Configure upload folders
+UPLOAD_FOLDER = 'Uploads'
+MODELS_FOLDER = os.path.join(UPLOAD_FOLDER, 'models')
+THUMBNAILS_FOLDER = os.path.join(UPLOAD_FOLDER, 'thumbnails')
+DATASET_THUMBNAILS_FOLDER = '3d-dataset/Thumbnails'
+
+os.makedirs(MODELS_FOLDER, exist_ok=True)
+os.makedirs(THUMBNAILS_FOLDER, exist_ok=True)
+
+CATEGORIES = ['Abstract', 'Alabastron', 'All Models', 'Amphora', 'Aryballos', 'Bowl', 'Dinos', 'Hydria', 'Kalathos', 'Kantharos', 'Krater', 'Kyathos', 'Kylix', 'Lagynos', 'Lebes', 'Lekythos', 'Lydion', 'Mastos', 'Modern-Bottle', 'Modern-Glass', 'Modern-Mug', 'Modern-Vase', 'Mug', 'Native American - Bottle', 'Native American - Bowl', 'Native American - Effigy', 'Native American - Jar', 'Nestoris', 'Oinochoe', 'Other', 'Pelike', 'Picher Shaped', 'Pithoeidi', 'Pithos', 'Psykter', 'Pyxis', 'Skyphos']
 
 # Ensure upload directory exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# CSV file to track uploaded models
+CSV_FILE_PATH = 'uploaded_models.csv'
+if not os.path.exists(CSV_FILE_PATH):
+    with open(CSV_FILE_PATH, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['Model Name', 'Category', 'Model Path', 'Thumbnail Path'])
 
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def load_csv_database(csv_path):
-    """Load descriptors from a CSV file into a dictionary."""
-    df = pd.read_csv(csv_path)
-    database = {}
-    
-    for _, row in df.iterrows():
-        # Get the image name
-        image_name = row['Image Name']
-        
-        # Initialize list to store all features
-        all_features = []
-        
-        # Process each feature column
-        for col in df.columns[1:]:  # Skip the Image Name column
-            value = row[col]
-            if isinstance(value, str):
-                if value.startswith('[') and value.endswith(']'):
-                    # Convert string representation of array to numpy array
-                    try:
-                        # Remove any newlines and extra spaces
-                        value = value.replace('\n', '').strip()
-                        # Convert string to list of floats
-                        value = np.fromstring(value.strip('[]'), sep=' ')
-                    except ValueError:
-                        print(f"Error parsing column {col} for image {image_name}")
-                        continue
-            
-            # Convert to numpy array if it isn't already
-            if not isinstance(value, np.ndarray):
-                value = np.array([value])
-            
-            value = value / np.linalg.norm(value) if np.linalg.norm(value) > 0 else value
-                
-            # Flatten array and append to features
-            all_features.extend(value.flatten())
-        
-        # Store the concatenated feature vector
-        database[image_name] = np.array(all_features)
-    
-    image_ids = list(database.keys())  # List of image paths
-    return database, image_ids
-
-
-
-@app.route('/upload-images', methods=['POST'])
-def upload_images():
-    if 'images' not in request.files:
-        return jsonify({"error": "No files uploaded"}), 400
-    
-    files = request.files.getlist('images')
-    categories = request.form.getlist('categories')
-    
-    if not files or len(files) == 0:
-        return jsonify({"error": "No files uploaded"}), 400
-    
-    uploaded_files = []
-    
-    for i, file in enumerate(files):
-        if file and allowed_file(file.filename):
-            # Generate a unique filename
-            filename = str(uuid.uuid4()) + '_' + secure_filename(file.filename)
-            category = categories[i] if i < len(categories) else 'uncategorized'
-            
-            # Create category subdirectory if it doesn't exist
-            category_path = os.path.join(UPLOAD_FOLDER, category)
-            os.makedirs(category_path, exist_ok=True)
-            
-            # Save the file
-            filepath = os.path.join(category_path, filename)
-            file.save(filepath)
-            
-            # Store file metadata in MongoDB
-            file_metadata = {
-                'filename': filename,
-                'original_name': file.filename,
-                'category': category,
-                'filepath': filepath
-            }
-            images_collection.insert_one(file_metadata)
-            
-            uploaded_files.append({
-                'filename': filename,
-                'originalName': file.filename,
-                'category': category
-            })
-        else:
-            return jsonify({"error": f"Invalid file: {file.filename}"}), 400
-    
-    return jsonify({
-        "message": "Files uploaded successfully", 
-        "files": uploaded_files
-    }), 200
-
-@app.route('/delete-image', methods=['DELETE'])
-def delete_image():
-    data = request.json
-    filename = data.get('filename')
-    category = data.get('category')
-    
-    if not filename or not category:
-        return jsonify({"error": "Filename and category are required"}), 400
-    
-    try:
-        # Remove file from filesystem
-        filepath = os.path.join(UPLOAD_FOLDER, category, filename)
-        if os.path.exists(filepath):
-            os.remove(filepath)
-        
-        # Remove metadata from MongoDB
-        images_collection.delete_one({
-            'filename': filename, 
-            'category': category
-        })
-        
-        return jsonify({"message": "Image deleted successfully"}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# Previous authentication routes remain the same
+# Register and login routes remain unchanged
 @app.route('/register', methods=['POST'])
 def register():
     data = request.json
@@ -161,18 +57,13 @@ def register():
     email = data.get('email')
     password = data.get('password')
 
-    # Check if all fields are present
     if not full_name or not email or not password:
         return jsonify({"message": "All fields are required"}), 400
 
-    # Check if user already exists
     if users_collection.find_one({'email': email}):
         return jsonify({"message": "Email already registered"}), 400
 
-    # Hash the password
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-
-    # Insert user into the database
     users_collection.insert_one({
         'full_name': full_name,
         'email': email,
@@ -192,129 +83,122 @@ def login():
     
     return jsonify({"message": "Login successful"}), 200
 
-# New route to fetch existing images
-@app.route('/get-existing-images', methods=['GET'])
-def get_existing_images():
+@app.route('/Uploads/thumbnails/<filename>', methods=['GET'])
+def serve_thumbnail(filename):
     try:
-        # Retrieve all image metadata from MongoDB
-        existing_images = list(images_collection.find({}, {'_id': 0}))
-        
-        # Verify that the files actually exist in the filesystem
-        verified_images = []
-        for image in existing_images:
-            filepath = os.path.join(UPLOAD_FOLDER, image['category'], image['filename'])
-            if os.path.exists(filepath):
-                verified_images.append(image)
-        
-        return jsonify({"images": verified_images}), 200
+        return send_from_directory(THUMBNAILS_FOLDER, filename)
+    except Exception as e:
+        return jsonify({"error": f"Could not load image: {str(e)}"}), 404
+
+@app.route('/Uploads/thumbnails/<filename>', methods=['GET'])
+def serve_rsscn_image(filename):
+    return send_from_directory('Uploads', filename)
+
+# Modify your upload_model route to ensure proper file paths
+@app.route('/upload-model', methods=['POST'])
+def upload_model():
+    if 'file' not in request.files or 'category' not in request.form:
+        return jsonify({"error": "No file or category provided"}), 400
+
+    file = request.files['file']
+    category = request.form['category']
+
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+
+    if category not in CATEGORIES:
+        return jsonify({"error": "Invalid category"}), 400
+
+    # Save the 3D model
+    filename = secure_filename(file.filename)
+    model_path = os.path.join(MODELS_FOLDER, filename)
+    file.save(model_path)
+
+    # Look for the corresponding thumbnail
+    thumbnail_name = os.path.splitext(filename)[0] + '.jpg'
+    thumbnail_path = os.path.join(DATASET_THUMBNAILS_FOLDER, category, thumbnail_name)
+
+    if os.path.exists(thumbnail_path):
+        # Copy the thumbnail to the Uploads/thumbnails folder
+        destination_thumbnail_path = os.path.join(THUMBNAILS_FOLDER, thumbnail_name)
+        shutil.copy(thumbnail_path, destination_thumbnail_path)
+        # Store the relative URL path that matches our new route
+        thumbnail_url = f"/Uploads/thumbnails/{thumbnail_name}"
+    else:
+        thumbnail_url = None
+
+    # Update the CSV file
+    with open(CSV_FILE_PATH, mode='a', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([filename, category, model_path, thumbnail_url])
+
+    return jsonify({
+        "message": "Model uploaded successfully",
+        "model_path": model_path,
+        "thumbnailUrl": thumbnail_url
+    }), 200
+
+
+@app.route('/get-uploaded-models', methods=['GET'])
+def get_uploaded_models():
+    try:
+        models = []
+        with open(CSV_FILE_PATH, mode='r') as file:
+            reader = csv.reader(file)
+            next(reader)  # Skip header
+            for row in reader:
+                # Return the relative URL path
+                models.append({
+                    "filename": row[0],
+                    "category": row[1],
+                    "model_path": row[2],
+                    "thumbnailUrl": row[3]  # This should be the relative path starting with /uploads/thumbnails/
+                })
+        return jsonify({"models": models}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Make sure CORS is properly configured to allow image requests
+
+@app.route('/delete-model', methods=['DELETE'])
+def delete_model():
+    data = request.json
+    filename = data.get('filename')
+
+    if not filename:
+        return jsonify({"error": "Filename is required"}), 400
+
+    try:
+        # Delete the model file
+        model_path = os.path.join(MODELS_FOLDER, filename)
+        if os.path.exists(model_path):
+            os.remove(model_path)
+        else:
+            return jsonify({"error": "Model file not found"}), 404
+
+        # Delete the corresponding thumbnail
+        thumbnail_name = os.path.splitext(filename)[0] + '.jpg'
+        thumbnail_path = os.path.join(THUMBNAILS_FOLDER, thumbnail_name)
+        if os.path.exists(thumbnail_path):
+            os.remove(thumbnail_path)
+
+        # Remove the entry from the CSV file
+        rows = []
+        with open(CSV_FILE_PATH, mode='r') as file:
+            reader = csv.reader(file)
+            rows = [row for row in reader if row[0] != filename]  # Skip the row with the deleted model
+
+        # Write the updated rows back to the CSV
+        with open(CSV_FILE_PATH, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerows(rows)
+
+        return jsonify({"message": "Model and thumbnail deleted successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/transform-image', methods=['POST'])
-def transform_image():
-    try:
-        # Check if image details are in the form data
-        if 'image' not in request.form:
-            return jsonify({"error": "No image filename provided"}), 400
-        
-        filename = request.form['image']
-        category = request.form['category']
-        transformations = json.loads(request.form['transformations'])
-        
-        # Find image metadata in MongoDB
-        image_metadata = images_collection.find_one({
-            'filename': filename, 
-            'category': category
-        })
-        
-        if not image_metadata:
-            return jsonify({"error": "Image not found in database"}), 404
-        
-        filepath = image_metadata['filepath']
-        
-        # Open the image
-        img = PILImage.open(filepath)
-        
-        # Apply transformations in order
-        for transform in transformations:
-            transform_type = transform['type']
-            params = transform['params']
-            
-            if transform_type == 'crop':
-                img = img.crop((
-                    params['x'], 
-                    params['y'], 
-                    min(params['x'] + params['width'], img.width), 
-                    min(params['y'] + params['height'], img.height)
-                ))
-            
-            elif transform_type == 'resize':
-                img = img.resize((
-                    params['width'], 
-                    params['height']
-                ))
-            
-            elif transform_type == 'rotate':
-                img = img.rotate(params)
-            
-            elif transform_type == 'scale':
-                scale_params = float(json.loads(request.form.get('scale', '1')))
-                new_size = (
-                int(img.width * scale_params), 
-                int(img.height * scale_params))
-                img = img.resize(new_size)
-            elif transform_type == 'translate':
-                # Create a new blank image with expanded dimensions
-                new_width = img.width + abs(params['x'])
-                new_height = img.height + abs(params['y'])
-                new_img = PILImage.new('RGBA', (new_width, new_height), (0, 0, 0, 0))
-                
-                # Paste the original image with offset
-                new_img.paste(img, (max(0, params['x']), max(0, params['y'])))
-                img = new_img
-            
-            elif transform_type == 'flip':
-                if params == 'horizontal':
-                    img = img.transpose(PILImage.FLIP_LEFT_RIGHT)
-                elif params == 'vertical':
-                    img = img.transpose(PILImage.FLIP_TOP_BOTTOM)
-        
-        # Generate a new unique filename
-        file_ext = os.path.splitext(filename)[1]
-        new_filename = f'transformed_{uuid.uuid4()}{file_ext}'
-        new_filepath = os.path.join(UPLOAD_FOLDER, category, new_filename)
-        
-        # Save the transformed image
-        img.save(new_filepath)
-        
-        # Store new image metadata
-        new_image_metadata = {
-            'filename': new_filename,
-            'original_name': f'Transformed_{image_metadata["original_name"]}',
-            'category': category,
-            'filepath': new_filepath,
-            'original_image': filename
-        }
-        images_collection.insert_one(new_image_metadata)
-        
-        return jsonify({
-            "message": "Image transformed successfully", 
-            "newImage": {
-                "filename": new_filename,
-                "category": category
-            }
-        }), 200
-    
-    except Exception as e:
-        # Log the full error traceback
-        print("Transformation Error:", str(e))
-        print(traceback.format_exc())
-        return jsonify({
-            "error": "Failed to transform image", 
-            "details": str(e)
-        }), 500
-
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 if __name__ == '__main__':
     app.run(debug=True)
