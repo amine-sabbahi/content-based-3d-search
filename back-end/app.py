@@ -94,6 +94,7 @@ def serve_thumbnail(filename):
 def serve_rsscn_image(filename):
     return send_from_directory('Uploads', filename)
 
+
 # Modify your upload_model route to ensure proper file paths
 @app.route('/upload-model', methods=['POST'])
 def upload_model():

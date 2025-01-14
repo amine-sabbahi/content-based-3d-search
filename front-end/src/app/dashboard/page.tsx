@@ -26,7 +26,11 @@ const Dashboard = () => {
   const fetchUploadedModels = async () => {
     try {
       const response = await axios.get("http://localhost:5000/get-uploaded-models");
-      setUploadedModels(response.data.models);
+      const models = response.data.models.map((model: UploadedModel) => ({
+        ...model,
+        thumbnailUrl: model.thumbnailUrl ? `http://localhost:5000${model.thumbnailUrl}` : null,
+      }));
+      setUploadedModels(models);
       setIsLoading(false);
     } catch (error) {
       console.error("Error fetching uploaded models:", error);
