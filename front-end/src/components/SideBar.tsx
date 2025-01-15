@@ -28,7 +28,7 @@ const SideBarImageApp = ({children}) => {
   };
   // Navigation items with icons and labels
   const navigationItems = [
-    {icon: <Upload className="w-5 h-5"/>, label: 'Upload Images', href: '/dashboard'},
+    {icon: <Upload className="w-5 h-5"/>, label: 'Upload 3D Model', href: '/dashboard'},
     {icon: <Repeat2 className="w-5 h-5"/>, label: '3D Model Search', href: '/dashboard/3d-model-search'},
     {icon: <ImagePlus className="w-5 h-5"/>, label: 'Transform Images', href: '/dashboard/transform-images'},
     {icon: <Repeat2 className="w-5 h-5"/>, label: 'Simple Return', href: '/dashboard/simple-return'},

@@ -3,12 +3,8 @@ from flask_cors import CORS
 from pymongo import MongoClient
 import bcrypt
 import os
-import uuid
 from flask import send_from_directory
 from werkzeug.utils import secure_filename
-from PIL import Image as PILImage
-import traceback
-import json
 import pandas as pd
 from werkzeug.utils import secure_filename
 import shutil
