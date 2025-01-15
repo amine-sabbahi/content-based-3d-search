@@ -13,6 +13,8 @@ import pandas as pd
 from werkzeug.utils import secure_filename
 import shutil
 import csv  # Added for CSV handling
+from similarity import *
+from similarityReduction import *
 
 app = Flask(__name__)
 CORS(app)
@@ -90,9 +92,9 @@ def serve_thumbnail(filename):
     except Exception as e:
         return jsonify({"error": f"Could not load image: {str(e)}"}), 404
 
-@app.route('/Uploads/thumbnails/<filename>', methods=['GET'])
-def serve_rsscn_image(filename):
-    return send_from_directory('Uploads', filename)
+@app.route('/3d-dataset/Thumbnails/<category>/<filename>', methods=['GET'])
+def serve_3ddataset_thumbnail(category,filename):
+    return send_from_directory('3d-dataset', f'Thumbnails/{category}/{filename}')
 
 
 # Modify your upload_model route to ensure proper file paths
@@ -197,6 +199,104 @@ def delete_model():
         return jsonify({"message": "Model and thumbnail deleted successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+@app.route('/similarity-search', methods=['POST'])
+def similarity_search():
+    try:
+        filename = request.form.get('image')
+        category = request.form.get('category')
+        descriptor_type = request.form.get('descriptorType', 'regular')
+        dataset_path = request.form.get('datasetPath')
+        reducfactor = request.form.get('reductionFactor')
+
+        print(filename)
+        print(category)
+        print(descriptor_type)
+        print(dataset_path)
+        if reducfactor != None :
+         reducfactor = float(reducfactor)
+
+         print(reducfactor)
+        model_path = os.path.join(UPLOAD_FOLDER,'models', filename)
+
+        print(model_path)
+        
+        try:
+            database_df = pd.read_csv(dataset_path)
+        except Exception as e:
+            return jsonify({
+                'error': 'Failed to load database',
+                'details': f'Error reading CSV file: {str(e)}'
+            }), 500
+        if descriptor_type == 'regular':
+            try:
+                # Extract features
+                features = extract_shape_features(
+                    mesh_path=model_path,
+                    max_order=10
+                 )
+
+                # Calculate query features
+                print("Calculating query features...")
+                query_fourier = features[0]
+                query_zernike = features[1]
+    
+                print(f"Query Fourier feature: {query_fourier}")
+                print(f"Query Zernike feature: {query_zernike}")
+                query_features = (query_fourier, query_zernike)
+
+
+                results = find_most_similar(query_features, database_df, k=20)
+            except Exception as e:
+                return jsonify({
+                 'error': 'Failed to compare images',
+                   'details': f'Error in comparison: {str(e)}'
+             }), 500
+        else :
+            try:
+
+                original_mesh = trimesh.load(model_path)
+                reduced_mesh = reduce_mesh_with_pymeshlab(original_mesh, reducfactor)
+
+                # Calculate query features
+                print("Calculating query features...")
+                query_fourier = compute_fourier_features(reduced_mesh)
+                query_zernike = compute_zernike_features(reduced_mesh)
+    
+                print(f"Query Fourier feature: {query_fourier}")
+                print(f"Query Zernike feature: {query_zernike}")
+                query_features = (query_fourier, query_zernike)
+
+
+                results = find_most_similar(query_features, database_df, k=20)
+            except Exception as e:
+                return jsonify({
+                 'error': 'Failed to compare images',
+                   'details': f'Error in comparison: {str(e)}'
+             }), 500
+        
+        formatted_results = []
+        for row in results:
+            
+            formatted_results.append({
+                'imagePath': row['model_path'],  # Already in correct format: 'aGrass/a001.jpg'
+                'distance': row['similarity'],
+                'category': row['category'],  # Extract category (e.g., 'aGrass')
+                'originalName': row['model_path'].split('\\')[3],   # Extract filename (e.g., 'a001.jpg')
+                'Thumbnail': row['model_path'].split('\\')[3].replace('.obj','.jpg')
+            })
+        
+        return jsonify({
+            'results': formatted_results
+        }), 200
+    
+    except Exception as e:
+        print(f"Similarity search error: {e}")
+        return jsonify({
+            'error': 'Failed to perform similarity search',
+            'details': str(e)
+        }), 500
+
 
 
 CORS(app, resources={r"/*": {"origins": "*"}})

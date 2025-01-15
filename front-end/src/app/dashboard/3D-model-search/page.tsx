@@ -9,37 +9,48 @@ import Image from 'next/image';
 import { SearchResult, DESCRIPTOR_TYPES, DescriptorType } from '@/types/search';
 import ImageSearchCard from '@/components/ImageSearchCard';
 
-interface UploadedImage {
+interface UploadedModel {
   filename: string;
+  thumbnailUrl: string | null;
   category: string;
-  originalName: string;
 }
 
+
 const SimpleSimilaritySearch = () => {
-  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
+  const [uploadedModels, setUploadedModels] = useState<UploadedModel[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
   // Search State
-  const [selectedImage, setSelectedImage] = useState<UploadedImage | null>(null);
-  const [descriptorType, setDescriptorType] = useState<DescriptorType>('all');
+  const [selectedImage, setSelectedImage] = useState<UploadedModel | null>(null);
+  const [descriptorType, setDescriptorType] = useState<DescriptorType>('regular');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
 
-  // Fetch existing images
-  const fetchExistingImages = async () => {
-    try {
-      const response = await axios.get('http://localhost:5000/get-existing-images');
-      
-      const existingImages: UploadedImage[] = response.data.images.map((image: any) => ({
-        filename: image.filename,
-        category: image.category,
-        originalName: image.original_name
-      }));
+  const getDatasetPath = (type: DescriptorType): string => {
+    switch (type) {
+      case 'reduction_20':
+        return 'dataset_features_reduced_20.csv';
+      case 'reduction_50':
+        return 'dataset_features_reduced_50.csv';
+      case 'reduction_70':
+        return 'dataset_features_reduced_70.csv';
+      default:
+        return 'dataset_features.csv';
+    }
+  };
 
-      setUploadedImages(existingImages);
+  // Fetch uploaded models
+  const fetchUploadedModels = async () => {
+    try {
+      const response = await axios.get("http://localhost:5000/get-uploaded-models");
+      const models = response.data.models.map((model: UploadedModel) => ({
+        ...model,
+        thumbnailUrl: model.thumbnailUrl ? `http://localhost:5000${model.thumbnailUrl}` : null,
+      }));
+      setUploadedModels(models);
       setIsLoading(false);
     } catch (error) {
-      console.error('Error fetching existing images:', error);
-      toast.error('Failed to load existing images');
+      console.error("Error fetching uploaded models:", error);
+      toast.error("Failed to load uploaded models");
       setIsLoading(false);
     }
   };
@@ -57,6 +68,12 @@ const SimpleSimilaritySearch = () => {
       formData.append('image', selectedImage.filename);
       formData.append('category', selectedImage.category);
       formData.append('descriptorType', descriptorType);
+      formData.append('datasetPath', getDatasetPath(descriptorType));
+
+      if (descriptorType !== 'regular') {
+        const reductionFactor = parseFloat(descriptorType.split('_')[1]) / 100;
+        formData.append('reductionFactor', reductionFactor.toString());
+      }
 
       const response = await axios.post('http://localhost:5000/similarity-search', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
@@ -72,7 +89,7 @@ const SimpleSimilaritySearch = () => {
   };
 
   useEffect(() => {
-    fetchExistingImages();
+    fetchUploadedModels();
   }, []);
 
   if (isLoading) {
@@ -90,11 +107,11 @@ const SimpleSimilaritySearch = () => {
       <div className="flex h-screen">
         {/* Left Sidebar - Image Selection and Search Options */}
         <div className="w-1/4 p-4 border-r bg-gray-100 overflow-y-auto">
-          <h2 className="text-xl font-bold mb-4">Image Similarity Search</h2>
+          <h2 className="text-xl font-bold mb-4">Model Similarity Search</h2>
           
           {/* Descriptor Type Selection */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700">Descriptor Type</label>
+            <label className="block text-sm font-medium text-gray-700">Type</label>
             <select 
               value={descriptorType} 
               onChange={(e) => setDescriptorType(e.target.value as DescriptorType)}
@@ -108,23 +125,29 @@ const SimpleSimilaritySearch = () => {
 
           {/* Image Grid for Selection */}
           <div className="grid grid-cols-3 gap-2">
-            {uploadedImages.map((image, index) => (
+            {uploadedModels.map((model, index) => (
               <div 
                 key={index} 
                 className={`cursor-pointer border-2 ${
-                  selectedImage?.filename === image.filename 
+                  selectedImage?.filename === model.filename 
                     ? 'border-blue-500' 
                     : 'border-transparent'
                 }`}
-                onClick={() => setSelectedImage(image)}
-              >
-                <Image 
-                  src={`http://localhost:5000/${image.category}/${image.filename}`} 
-                  alt={image.originalName}
-                  width={100}
-                  height={100}
-                  className="object-cover w-full h-full"
-                />
+                onClick={() => setSelectedImage(model)}
+              > {model.thumbnailUrl ? (
+                 <Image 
+                   src={model.thumbnailUrl}
+                   alt={model.filename}
+                   width={100}
+                   height={100}
+                   className="object-cover w-full h-full"
+                 />) : (
+                  <div className="flex items-center justify-center h-full bg-gray-100">
+                    <p className="text-gray-500">No Thumbnail</p>
+                    
+                  </div>
+                  
+                )}
               </div>
             ))}
           </div>
@@ -135,7 +158,7 @@ const SimpleSimilaritySearch = () => {
             disabled={!selectedImage}
             className="mt-4 w-full bg-blue-500 text-white py-2 rounded-md hover:bg-blue-600 disabled:bg-gray-300"
           >
-            Search Similar Images
+            Search Similar Models
           </button>
         </div>
 

@@ -4,17 +4,14 @@ export interface SearchResult {
     distance: number;
     category: string;
     originalName: string;
+    Thumbnail: string;
   }
   
   export const DESCRIPTOR_TYPES = [
-    'all', 
-    'histogram_color', 
-    'co-occurrence', 
-    'hog', 
-    'lbp', 
-    'hu', 
-    'gabor', 
-    'dominant_colors'
+    'regular',
+    'reduction_20',
+    'reduction_50',
+    'reduction_70'
   ] as const;
   
   export type DescriptorType = typeof DESCRIPTOR_TYPES[number];

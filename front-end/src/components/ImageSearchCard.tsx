@@ -11,7 +11,7 @@ const ImageSearchCard: React.FC<ImageSearchCardProps> = ({ result, descriptorTyp
     <div className="border rounded-lg overflow-hidden shadow-md hover:shadow-xl transition-shadow">
       <div className="relative h-48 w-full">
         <Image 
-          src={`http://localhost:5000/RSSCN7/${result.category}/${result.originalName}`} 
+          src={`http://localhost:5000/3d-dataset/Thumbnails/${result.category}/${result.Thumbnail}`} 
           alt={result.imagePath}
           fill
           className="object-cover"
@@ -22,7 +22,7 @@ const ImageSearchCard: React.FC<ImageSearchCardProps> = ({ result, descriptorTyp
         <p className="text-xs text-gray-600">Category: {result.category}</p>
         <p className="text-xs text-gray-500">Similarity: {(1 - result.distance).toFixed(6)}</p>
         <p className="text-xs text-gray-500">Distance: {(result.distance).toFixed(6)}</p>
-        <p className="text-xs text-gray-500">Descriptor: {descriptorType}</p>
+        <p className="text-xs text-gray-500">Type : {descriptorType}</p>
       </div>
     </div>
   );

@@ -21,8 +21,21 @@ const SimpleSimilaritySearch = () => {
   
   // Search State
   const [selectedImage, setSelectedImage] = useState<UploadedImage | null>(null);
-  const [descriptorType, setDescriptorType] = useState<DescriptorType>('all');
+  const [descriptorType, setDescriptorType] = useState<DescriptorType>('regular');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+
+  const getDatasetPath = (type: DescriptorType): string => {
+    switch (type) {
+      case 'reduction_20':
+        return 'dataset_features_reduced_20.csv';
+      case 'reduction_50':
+        return 'dataset_features_reduced_50.csv';
+      case 'reduction_70':
+        return 'dataset_features_reduced_70.csv';
+      default:
+        return 'dataset_features.csv';
+    }
+  };
 
   // Fetch existing images
   const fetchExistingImages = async () => {
@@ -57,6 +70,13 @@ const SimpleSimilaritySearch = () => {
       formData.append('image', selectedImage.filename);
       formData.append('category', selectedImage.category);
       formData.append('descriptorType', descriptorType);
+      formData.append('datasetPath', getDatasetPath(descriptorType));
+
+           // If using reduction, include reduction factor
+      if (descriptorType !== 'regular') {
+            const reductionFactor = parseFloat(descriptorType.split('_')[1]) / 100;
+            formData.append('reductionFactor', reductionFactor.toString());
+          }
 
       const response = await axios.post('http://localhost:5000/similarity-search', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
