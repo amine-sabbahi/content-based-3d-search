@@ -2,9 +2,11 @@
 
 This project involves the development of a 3D model indexing and retrieval system based on shape descriptors. The system is designed to calculate shape descriptors for a query 3D model and measure its similarity to models in a database, returning the closest matches.
 
-![images](img/upload.png)
+![images](img/upload1.png)
 
-![images](img/search.png)
+![images](img/search1.png)
+
+![images](img/search2.png)
 
 ## Features
 - **Shape Descriptors**: Implementation of 3D Fourier coefficients and Zernike moments for compact and invariant representations of 3D models.
